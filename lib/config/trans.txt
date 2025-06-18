@@ -1,0 +1,796 @@
+transaction/data/datasources/transaction_remote_datasource.dart
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/entities/transaction_entity.dart';
+
+abstract class TransactionRemoteDataSource {
+  Future<void> addTransaction(TransactionEntity transaction);
+}
+
+class TransactionRemoteDataSourceImpl implements TransactionRemoteDataSource {
+  final SupabaseClient client;
+
+  TransactionRemoteDataSourceImpl(this.client);
+
+  @override
+  Future<void> addTransaction(TransactionEntity transaction) async {
+    final userId = transaction.userId;
+    final amount = transaction.amount;
+    final date = transaction.date;
+    final category = transaction.category;
+    final note = transaction.note;
+    final type = transaction.type;
+    final source = transaction.source;
+
+    try {
+      final _ = await client.from('transactions').insert({
+        'user_id': userId,
+        'amount': amount,
+        'type': type,
+        'category': category,
+        'note': note,
+        'date': date.toIso8601String(),
+        if (source != null) 'source': source,
+      }).select();
+
+      final month = date.month;
+      final year = date.year;
+
+      final budgetData = await client
+          .from('budget_allocation')
+          .select()
+          .eq('user_id', userId)
+          .eq('month', month)
+          .eq('year', year)
+          .maybeSingle();
+
+      if (type == 'income') {
+        final needs = amount * 0.5;
+        final wants = amount * 0.3;
+        final savings = amount * 0.2;
+
+        if (budgetData == null) {
+          await client.from('budget_allocation').insert({
+            'user_id': userId,
+            'month': month,
+            'year': year,
+            'needs': needs,
+            'wants': wants,
+            'savings': savings,
+            'total_income': amount,
+          });
+        } else {
+          final updatedNeeds = (budgetData['needs'] ?? 0) + needs;
+          final updatedWants = (budgetData['wants'] ?? 0) + wants;
+          final updatedSavings = (budgetData['savings'] ?? 0) + savings;
+          final updatedIncome = (budgetData['total_income'] ?? 0) + amount;
+
+          await client
+              .from('budget_allocation')
+              .update({
+                'needs': updatedNeeds,
+                'wants': updatedWants,
+                'savings': updatedSavings,
+                'total_income': updatedIncome,
+              })
+              .eq('user_id', userId)
+              .eq('month', month)
+              .eq('year', year);
+        }
+      } else if (type == 'expense') {
+        if (budgetData == null) {
+          throw Exception("Data alokasi tidak ditemukan untuk bulan ini");
+        }
+
+        if (source == null) {
+          throw Exception("Source harus diisi untuk pengeluaran");
+        }
+
+        final currentSourceValue = (budgetData[source] ?? 0) as num;
+
+        if (currentSourceValue < amount) {
+          throw Exception("Dana ${source} tidak cukup");
+        }
+
+        final updatedSourceValue = currentSourceValue - amount;
+
+        await client
+            .from('budget_allocation')
+            .update(<String, dynamic>{
+              source: updatedSourceValue,
+            })
+            .eq('user_id', userId)
+            .eq('month', month)
+            .eq('year', year);
+      }
+    } catch (e) {
+      throw Exception('Gagal menyimpan transaksi: ${e.toString()}');
+    }
+  }
+}
+
+transaction/data/models/transaction_model.dart
+import '../../domain/entities/transaction_entity.dart';
+
+class TransactionModel extends TransactionEntity {
+  TransactionModel({
+    String? id,
+    required String userId,
+    required double amount,
+    required String type,
+    required String category,
+    String? note,
+    required DateTime date,
+    String? source,
+  }) : super(
+          id: id,
+          userId: userId,
+          amount: amount,
+          type: type,
+          category: category,
+          note: note,
+          date: date,
+          source: source,
+        );
+
+  factory TransactionModel.fromJson(Map<String, dynamic> json) {
+    return TransactionModel(
+      id: json['id'],
+      userId: json['user_id'],
+      amount: (json['amount'] as num).toDouble(),
+      type: json['type'],
+      category: json['category'],
+      note: json['note'],
+      date: DateTime.parse(json['date']),
+      source: json['source'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'amount': amount,
+      'type': type,
+      'category': category,
+      'note': note,
+      'date': date.toIso8601String(),
+      'source': source,
+    };
+  }
+}
+
+transaction/data/reporisitories/transaction_repository_impl.dart
+import 'package:cashy/features/transaction/domain/entities/transaction_entity.dart';
+import 'package:cashy/features/transaction/domain/repositories/transaction_repository.dart';
+import '../datasources/transaction_remote_datasource.dart';
+
+class TransactionRepositoryImpl implements TransactionRepository {
+  final TransactionRemoteDataSource remoteDataSource;
+
+  TransactionRepositoryImpl(this.remoteDataSource);
+
+  @override
+  Future<void> addTransaction(TransactionEntity transaction) async {
+    await remoteDataSource.addTransaction(transaction);
+  }
+}
+
+transaction/domain/entities/transaction_entity.dart
+import 'package:equatable/equatable.dart';
+
+class TransactionEntity extends Equatable {
+  final String? id;
+  final String userId;
+  final double amount;
+  final String type;
+  final String category;
+  final String? note;
+  final DateTime date;
+  final String? source;
+
+  const TransactionEntity({
+    this.id,
+    required this.userId,
+    required this.amount,
+    required this.type,
+    required this.category,
+    this.note,
+    required this.date,
+    this.source,
+  });
+
+  @override
+  List<Object?> get props =>
+      [id, userId, amount, type, category, note, date, source];
+}
+
+transaction/domain/reporisitories/transaction__repository.dart
+import '../entities/transaction_entity.dart';
+
+abstract class TransactionRepository {
+  Future<void> addTransaction(TransactionEntity transaction);
+}
+
+transaction/domain/usecases/transaction_usecases.dart
+import '../entities/transaction_entity.dart';
+import '../repositories/transaction_repository.dart';
+
+class AddTransaction {
+  final TransactionRepository repository;
+
+  AddTransaction(this.repository);
+
+  Future<void> call(TransactionEntity transaction) {
+    return repository.addTransaction(transaction);
+  }
+}
+
+transaction/presentation/bloc/transaction_bloc.dart
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../domain/usecases/transaction_usecases.dart';
+import '../../domain/entities/transaction_entity.dart';
+import 'transaction_event.dart';
+import 'transaction_state.dart';
+
+class TransactionBloc extends Bloc<TransactionEvent, TransactionState> {
+  final AddTransaction addTransactionUseCase;
+
+  TransactionBloc({required this.addTransactionUseCase})
+      : super(TransactionInitial()) {
+    on<LoadSources>(_onLoadSources);
+    on<AddNewTransaction>(_onAddNewTransaction);
+  }
+
+  Future<void> _onLoadSources(
+      LoadSources event, Emitter<TransactionState> emit) async {
+    emit(SourceLoading());
+    try {
+      final response =
+          await Supabase.instance.client.rpc('get_budget_sources') as List;
+      final List<String> sources =
+          response.map((e) => e['source'] as String).toList();
+      emit(SourceLoaded(sources));
+    } catch (e) {
+      emit(SourceError('Gagal memuat sumber anggaran'));
+    }
+  }
+
+  Future<void> _onAddNewTransaction(
+      AddNewTransaction event, Emitter<TransactionState> emit) async {
+    emit(TransactionLoading());
+
+    try {
+      final isExpense = event.source != null;
+
+      final transaction = TransactionEntity(
+        userId: event.userId,
+        amount: event.amount,
+        type: isExpense ? 'expense' : 'income',
+        category: event.category,
+        note: event.note,
+        date: event.date,
+        source: event.source,
+      );
+
+      final client = Supabase.instance.client;
+
+      if (isExpense) {
+        final month = event.date.month;
+        final year = event.date.year;
+
+        final budgetData = await client
+            .from('budget_allocation')
+            .select()
+            .eq('user_id', event.userId)
+            .eq('month', month)
+            .eq('year', year)
+            .maybeSingle();
+
+        if (budgetData == null) {
+          emit(TransactionFailure("Belum ada alokasi anggaran bulan ini"));
+          return;
+        }
+
+        final currentAmount = event.amount;
+        final source = event.source!;
+
+        final budgetValue = budgetData[source] as num? ?? 0;
+
+        if (budgetValue < currentAmount) {
+          String msg = switch (source) {
+            'needs' => "dana kebutuhan tidak cukup",
+            'wants' => "dana keinginan tidak cukup",
+            'savings' => "dana tabungan tidak cukup",
+            _ => "dana tidak cukup",
+          };
+          emit(TransactionFailure(msg));
+          return;
+        }
+        final updatedValue = budgetValue - currentAmount;
+        final newTotalExpense =
+            (budgetData['total_expense'] as num? ?? 0) + currentAmount;
+
+        await client
+            .from('budget_allocation')
+            .update({
+              source: updatedValue,
+              'total_expense': newTotalExpense,
+            })
+            .eq('user_id', event.userId)
+            .eq('month', month)
+            .eq('year', year);
+      }
+
+      await addTransactionUseCase(transaction);
+
+      emit(TransactionSuccess());
+    } catch (e) {
+      emit(TransactionFailure(e.toString()));
+    }
+  }
+}
+
+transaction/presentation/bloc/transaction_event.dart
+abstract class TransactionEvent {}
+
+class LoadSources extends TransactionEvent {}
+
+class AddNewTransaction extends TransactionEvent {
+  final String userId;
+  final double amount;
+  final String category;
+  final DateTime date;
+  final String note;
+  final String? source;
+
+  AddNewTransaction({
+    required this.userId,
+    required this.amount,
+    required this.category,
+    required this.date,
+    required this.note,
+    this.source
+  });
+}
+
+transaction/presentation/bloc/transaction_state.dart
+abstract class TransactionState {}
+
+class TransactionInitial extends TransactionState {}
+
+class SourceLoading extends TransactionState {}
+
+class SourceLoaded extends TransactionState {
+  final List<String> sources;
+
+  SourceLoaded(this.sources);
+}
+
+class SourceError extends TransactionState {
+  final String message;
+
+  SourceError(this.message);
+}
+
+class TransactionLoading extends TransactionState {}
+
+class TransactionSuccess extends TransactionState {}
+
+class TransactionFailure extends TransactionState {
+  final String message;
+
+  TransactionFailure(this.message);
+}
+
+transaction/presentation/screens/transaction_page.dart
+import 'package:cashy/features/category/presentation/bloc/category_event.dart';
+import 'package:cashy/features/category/presentation/bloc/category_state.dart';
+import 'package:cashy/features/auth/presentation/widgets/snackbar_helper.dart';
+import 'package:cashy/features/transaction/presentation/bloc/transaction_event.dart';
+import 'package:cashy/features/transaction/presentation/bloc/transaction_state.dart';
+import 'package:cashy/features/transaction/presentation/widgets/transaction_source.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_multi_formatter/flutter_multi_formatter.dart';
+
+import '../../../category/domain/entities/category_entity.dart';
+import '../../../category/presentation/bloc/category_bloc.dart';
+
+import '../bloc/transaction_bloc.dart';
+
+class TransactionPage extends StatefulWidget {
+  const TransactionPage({super.key});
+
+  @override
+  State<TransactionPage> createState() => _TransactionPageState();
+}
+
+class _TransactionPageState extends State<TransactionPage> {
+  bool isExpense = true;
+
+  List<Category> categories = [];
+  String? selectedCategoryId;
+
+  List<String> expenseTypes = [];
+  String? selectedExpenseType;
+
+  TextEditingController dateController = TextEditingController();
+
+  TextEditingController amountController = TextEditingController();
+  TextEditingController noteController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+    context.read<TransactionBloc>().add(LoadSources());
+  }
+
+  void _loadCategories() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    final userId = user.id;
+    final type = isExpense ? 'expense' : 'income';
+    context.read<CategoryBloc>().add(LoadCategories(userId, type));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<TransactionBloc, TransactionState>(
+      listener: (context, state) {
+        if (state is TransactionSuccess) {
+          Navigator.of(context).pop(true);
+        } else if (state is TransactionFailure) {
+          showCustomSnackBar(
+              context, 'Gagal simpan transaksi: ${state.message}');
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            "Tambah Transaksi",
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.blue,
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        body: BlocListener<CategoryBloc, CategoryState>(
+          listener: (context, state) {
+            if (state is CategoryLoaded) {
+              setState(() {
+                categories = state.categories;
+                if (categories.isNotEmpty) {
+                  selectedCategoryId = categories.first.id;
+                }
+              });
+            }
+          },
+          child: SingleChildScrollView(
+            child: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 16, horizontal: 5),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                isExpense = false;
+                                _loadCategories();
+                              });
+                              context
+                                  .read<TransactionBloc>()
+                                  .add(LoadSources());
+                            },
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: !isExpense ? Colors.green : Colors.white,
+                                borderRadius: const BorderRadius.horizontal(
+                                    left: Radius.circular(8)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withAlpha(77),
+                                    offset: const Offset(0, 2),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Pemasukan',
+                                style: GoogleFonts.montserrat(
+                                  color:
+                                      !isExpense ? Colors.white : Colors.black,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                isExpense = true;
+                                _loadCategories();
+                              });
+                            },
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: isExpense ? Colors.red : Colors.white,
+                                borderRadius: const BorderRadius.horizontal(
+                                    right: Radius.circular(8)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withAlpha(77),
+                                    offset: const Offset(0, 2),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Pengeluaran',
+                                style: GoogleFonts.montserrat(
+                                  color:
+                                      isExpense ? Colors.white : Colors.black,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (isExpense)
+                    BlocBuilder<TransactionBloc, TransactionState>(
+                      builder: (context, state) {
+                        if (state is SourceLoading && expenseTypes.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(),
+                          );
+                        } else if (state is SourceLoaded) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              setState(() {
+                                expenseTypes = state.sources;
+                                if (selectedExpenseType == null ||
+                                    !expenseTypes
+                                        .contains(selectedExpenseType)) {
+                                  selectedExpenseType = expenseTypes.isNotEmpty
+                                      ? expenseTypes.first
+                                      : null;
+                                }
+                              });
+                            }
+                          });
+                        } else if (state is SourceError &&
+                            expenseTypes.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              state.message,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        if (expenseTypes.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              "Tipe pengeluaran tidak tersedia",
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+
+                        // Tampilkan dropdown dengan data yang sudah disimpan walaupun state bukan SourceLoaded
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Tipe Pengeluaran",
+                                style: GoogleFonts.montserrat(fontSize: 16),
+                              ),
+                              DropdownButton<String>(
+                                value: selectedExpenseType,
+                                isExpanded: true,
+                                items: expenseTypes.map((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(getSourceLabel(value)),
+                                  );
+                                }).toList(),
+                                onChanged: (String? newValue) {
+                                  setState(() {
+                                    selectedExpenseType = newValue!;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  if (isExpense) const SizedBox(height: 20),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, isExpense ? 0 : 0, 16, 0),
+                    child: TextFormField(
+                      controller: amountController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        CurrencyInputFormatter(
+                          leadingSymbol: 'Rp',
+                          useSymbolPadding: true,
+                          thousandSeparator: ThousandSeparator.Period,
+                          mantissaLength: 0,
+                        ),
+                      ],
+                      decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                        labelText: "Total Dana",
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      "Kategori",
+                      style: GoogleFonts.montserrat(fontSize: 16),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: DropdownButton<String>(
+                      dropdownColor: Colors.white,
+                      value: selectedCategoryId,
+                      isExpanded: true,
+                      hint: const Text("Pilih kategori"),
+                      icon: const Icon(Icons.arrow_drop_down),
+                      items: categories.map((Category cat) {
+                        return DropdownMenuItem<String>(
+                          value: cat.id,
+                          child: Text(cat.name),
+                        );
+                      }).toList(),
+                      onChanged: (String? value) {
+                        setState(() {
+                          selectedCategoryId = value!;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      readOnly: true,
+                      controller: dateController,
+                      decoration: const InputDecoration(labelText: "Tanggal"),
+                      onTap: () async {
+                        DateTime? pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime(DateTime.now().year,
+                              DateTime.now().month, DateTime.now().day),
+                        );
+
+                        if (pickedDate != null) {
+                          String formattedDate =
+                              DateFormat('yyyy-MM-dd').format(pickedDate);
+
+                          dateController.text = formattedDate;
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextFormField(
+                      controller: noteController,
+                      keyboardType: TextInputType.text,
+                      decoration: InputDecoration(
+                        border: const UnderlineInputBorder(),
+                        labelText: isExpense
+                            ? "Detail Pengeluaran"
+                            : "Detail Pemasukan",
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        final user = Supabase.instance.client.auth.currentUser;
+                        if (user == null) {
+                          showCustomSnackBar(context, 'User belum login');
+                          return;
+                        }
+
+                        final amountText = amountController.text.trim();
+                        final noteText = noteController.text.trim();
+                        final dateText = dateController.text.trim();
+
+                        if (amountText.isEmpty ||
+                            selectedCategoryId == null ||
+                            dateText.isEmpty) {
+                          showCustomSnackBar(context, 'Mohon isi semua data');
+                          return;
+                        }
+
+                        final cleanAmountText =
+                            amountText.replaceAll(RegExp(r'[^0-9]'), '');
+                        final amount = double.tryParse(cleanAmountText);
+                        if (amount == null) {
+                          showCustomSnackBar(
+                              context, 'Jumlah dana tidak valid');
+                          return;
+                        }
+
+                        final date = DateTime.tryParse(dateText);
+                        if (date == null) {
+                          showCustomSnackBar(context, 'Tanggal tidak valid');
+                          return;
+                        }
+
+                        context.read<TransactionBloc>().add(AddNewTransaction(
+                              userId: user.id,
+                              amount: amount,
+                              category: selectedCategoryId!,
+                              date: date,
+                              note: noteText,
+                              source: isExpense ? selectedExpenseType : null,
+                            ));
+                      },
+                      child: const Text("Simpan"),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+transaction/presentation/widgets/transaction_source.dart
+String getSourceLabel(String source) {
+  switch (source) {
+    case 'needs':
+      return 'Kebutuhan';
+    case 'wants':
+      return 'Keinginan';
+    case 'savings':
+      return 'Tabungan';
+    default:
+      return source;
+  }
+}
+
+Simpan dulu!

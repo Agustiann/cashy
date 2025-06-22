@@ -1,4 +1,4 @@
-features/financial_report/data/datasources/report_remote_datasource.dart
+financial_report/data/datasources/report_remote_datasource.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cashy/features/financial_report/data/models/report_model.dart';
 
@@ -6,6 +6,31 @@ class ReportRemoteDatasource {
   final SupabaseClient supabaseClient;
 
   ReportRemoteDatasource(this.supabaseClient);
+  Future<List<String>> getTransactionTypes() async {
+    final response = await supabaseClient
+        .rpc('get_enum_values', params: {'enum_type': 'transaction_type'});
+
+    // Response berupa List<dynamic> langsung, tanpa perlu akses .data
+    final List<dynamic> data = response;
+
+    if (data.isEmpty) {
+      return [];
+    }
+
+    return data.map((item) {
+      final enumLabel = item['enum_label'] as String;
+
+      if (enumLabel == 'income') {
+        return 'Pemasukan';
+      } else if (enumLabel == 'expense') {
+        return 'Pengeluaran';
+      } else if (enumLabel == 'Semua tipe') {
+        return 'Semua tipe';
+      } else {
+        return enumLabel;
+      }
+    }).toList();
+  }
 
   Future<List<ReportModel>> getMonthlyReport(String month, String year) async {
     final intMonth = int.parse(month);
@@ -83,7 +108,7 @@ class ReportRemoteDatasource {
   }
 }
 
-features/financial_report/data/models/report_model.dart
+financial_report/data/models/report_model.dart
 class ReportModel {
   final double amount;
   final String type;
@@ -107,7 +132,7 @@ class ReportModel {
   }
 }
 
-features/financial_report/data/repositories/report_repository_impl.dart
+financial_report/data/repositories/report_repository_impl.dart
 import 'package:cashy/features/financial_report/data/datasources/report_remote_datasource.dart';
 import 'package:cashy/features/financial_report/domain/entities/report_entity.dart';
 import 'package:cashy/features/financial_report/domain/repositories/report_repository.dart';
@@ -136,7 +161,7 @@ class ReportRepositoryImpl implements ReportRepository {
   }
 }
 
-features/financial_report/domain/entities/report_entity.dart
+financial_report/domain/entities/report_entity.dart
 import 'package:cashy/features/financial_report/data/models/report_model.dart';
 
 class ReportEntity {
@@ -159,7 +184,7 @@ class ReportEntity {
   }
 }
 
-features/financial_report/domain/repositories/report_repository.dart
+financial_report/domain/repositories/report_repository.dart
 import 'package:cashy/features/financial_report/domain/entities/report_entity.dart';
 
 abstract class ReportRepository {
@@ -168,7 +193,7 @@ abstract class ReportRepository {
   Future<List<ReportEntity>> getReportsThisYearUntilNow();
 }
 
-features/financial_report/domain/usecases/report_usecase.dart
+financial_report/domain/usecases/report_usecase.dart
 import 'package:cashy/features/financial_report/domain/entities/report_entity.dart';
 import 'package:cashy/features/financial_report/domain/repositories/report_repository.dart';
 
@@ -190,7 +215,7 @@ class ReportUseCase {
   }
 }
 
-features/financial_report/presentation/bloc/report_bloc.dart
+financial_report/presentation/bloc/report_bloc.dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cashy/features/financial_report/domain/usecases/report_usecase.dart';
 import 'package:cashy/features/financial_report/presentation/bloc/report_event.dart';
@@ -240,7 +265,7 @@ class ReportBloc extends Bloc<ReportEvent, ReportState> {
   }
 }
 
-features/financial_report/presentation/bloc/report_event.dart
+financial_report/presentation/bloc/report_event.dart
 abstract class ReportEvent {}
 
 class FetchMonthlyReport extends ReportEvent {
@@ -259,7 +284,7 @@ class FetchYearlyReport extends ReportEvent {
 class FetchReportsThisYearUntilNow extends ReportEvent {}
 
 
-features/financial_report/presentation/bloc/report_state.dart
+financial_report/presentation/bloc/report_state.dart
 import 'package:cashy/features/financial_report/domain/entities/report_entity.dart';
 
 abstract class ReportState {}
@@ -280,8 +305,7 @@ class ReportError extends ReportState {
   ReportError(this.message);
 }
 
-
-features/financial_report/presentation/screens/report_page.dart
+financial_report/presentation/screens/report_page.dart
 import 'package:cashy/features/financial_report/presentation/bloc/report_bloc.dart';
 import 'package:cashy/features/financial_report/presentation/bloc/report_event.dart';
 import 'package:cashy/features/financial_report/presentation/bloc/report_state.dart';
@@ -341,9 +365,6 @@ class _ReportPageState extends State<ReportPage> {
       context: context,
       builder: (context) {
         return ReportDownload(
-          onExport: () {
-            // Implement export sesuai kebutuhan
-          },
         );
       },
     );
@@ -568,21 +589,148 @@ class _ReportPageState extends State<ReportPage> {
   }
 }
 
-
-features/financial_report/presentation/widgets/date_utils.dart
+financial_report/presentation/widgets/date_utils.dart
 List<String> getYears({int startYear = 2025}) {
   final now = DateTime.now();
   int currentYear = now.year;
   return List.generate(currentYear - startYear + 1, (index) => (startYear + index).toString());
 }
 
-features/financial_report/presentation/widgets/report_download.dart
+financial_report/presentation/widgets/report_download.dart
 import 'package:flutter/material.dart';
+import 'package:cashy/features/financial_report/data/datasources/report_remote_datasource.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
-class ReportDownload extends StatelessWidget {
-  const ReportDownload({super.key, this.onExport});
+class ReportDownload extends StatefulWidget {
+  const ReportDownload({Key? key}) : super(key: key);
 
-  final VoidCallback? onExport;
+  @override
+  _ReportDownloadState createState() => _ReportDownloadState();
+}
+
+class _ReportDownloadState extends State<ReportDownload> {
+  List<String> transactionTypes = ['Semua tipe'];
+  String? selectedType = 'Semua tipe';
+  TextEditingController fromDateController = TextEditingController();
+  TextEditingController toDateController = TextEditingController();
+  TextEditingController titleController = TextEditingController();
+
+  final Map<String, String> transactionTypeMap = {
+    'Pemasukan': 'income',
+    'Pengeluaran': 'expense',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTransactionTypes();
+  }
+
+  Future<void> _loadTransactionTypes() async {
+    final types = await ReportRemoteDatasource(Supabase.instance.client)
+        .getTransactionTypes();
+
+    final filteredTypes = types
+        .where((type) => type.toLowerCase() != 'semua tipe')
+        .toSet()
+        .toList();
+
+    setState(() {
+      transactionTypes = ['Semua tipe', ...filteredTypes];
+
+      if (!transactionTypes.contains(selectedType)) {
+        selectedType = 'Semua tipe';
+      }
+    });
+  }
+
+  Future<void> _selectDate(
+      BuildContext context, TextEditingController controller) async {
+    DateTime? selectedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2025),
+      lastDate: DateTime.now(),
+    );
+
+    if (selectedDate != null) {
+      controller.text = DateFormat('yyyy-MM-dd').format(selectedDate);
+    }
+  }
+
+  Future<void> _exportPdf() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    final fromDate = fromDateController.text;
+    final toDate = toDateController.text;
+    final title = titleController.text;
+
+    final filterType = selectedType == 'Semua tipe'
+        ? null
+        : transactionTypeMap[selectedType ?? ''];
+
+    final response = await client
+        .from('transactions')
+        .select()
+        .eq('user_id', user!.id)
+        .gte('date', fromDate)
+        .lte('date', toDate)
+        .order('date')
+        .order('created_at');
+
+    List data = response;
+
+    if (filterType != null) {
+      data = data.where((item) => item['type'] == filterType).toList();
+    }
+
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Text(title,
+              style:
+                  pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 8),
+          pw.Text('Tipe Transaksi: ${selectedType ?? '-'}'),
+          pw.SizedBox(height: 20),
+          pw.Text('Nama: ${user.userMetadata?["display_name"] ?? '-'}'),
+          pw.Text('Email: ${user.email ?? '-'}'),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: [
+              'Tanggal',
+              'Waktu',
+              'Nominal',
+              'Tipe',
+              'Kategori',
+              'Keterangan',
+              'Tipe Pengeluaran'
+            ],
+            data: data.map((item) {
+              final date = item['date'] ?? '-';
+              final time =
+                  DateFormat.Hm().format(DateTime.parse(item['created_at']));
+              final amount = item['amount'].toString();
+              final type = item['type'] ?? '-';
+              final category = item['category'] ?? '-';
+              final note = item['note'] ?? '-';
+              final source = item['source'] ?? '-';
+              return [date, time, 'Rp $amount', type, category, note, source];
+            }).toList(),
+          )
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (format) async => pdf.save(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -591,86 +739,67 @@ class ReportDownload extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade800,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: Text(
-                'EKSPOR',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
           TextField(
-            decoration: InputDecoration(
+            controller: titleController,
+            decoration: const InputDecoration(
               labelText: 'Judul',
             ),
           ),
-          TextField(
-            decoration: InputDecoration(
-              labelText: 'Dari Tanggal',
+          GestureDetector(
+            onTap: () => _selectDate(context, fromDateController),
+            child: AbsorbPointer(
+              child: TextFormField(
+                controller: fromDateController,
+                decoration: const InputDecoration(
+                  labelText: 'Dari Tanggal',
+                ),
+              ),
             ),
-            controller: TextEditingController(text: '01 Jun 2025'),
           ),
-          TextField(
-            decoration: InputDecoration(
-              labelText: 'Sampai Tanggal',
+          GestureDetector(
+            onTap: () => _selectDate(context, toDateController),
+            child: AbsorbPointer(
+              child: TextFormField(
+                controller: toDateController,
+                decoration: const InputDecoration(
+                  labelText: 'Sampai Tanggal',
+                ),
+              ),
             ),
-            controller: TextEditingController(text: '30 Jun 2025'),
           ),
           DropdownButtonFormField<String>(
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Tipe',
             ),
-            items: ['Semua tipe','Pemasukan', 'Pengeluaran'].map((item) {
+            value: selectedType,
+            items: transactionTypes.map((item) {
               return DropdownMenuItem(
                 value: item,
                 child: Text(item),
               );
-            }).toList(), 
-            onChanged: (val) {},
-          ),
-          DropdownButtonFormField<String>(
-            decoration: InputDecoration(
-              labelText: 'Format',
-            ),
-            items: ['XLS','PDF','CSV'].map((item) {
-              return DropdownMenuItem(
-                value: item,
-                child: Text(item),
-              );
-            }).toList(), 
-            onChanged: (val) {},
+            }).toList(),
+            onChanged: (val) => setState(() => selectedType = val),
           ),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: Text('BATAL', style: TextStyle(
-                    color: Colors.white),)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('BATAL',
+                      style: TextStyle(color: Colors.white)),
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                    ),
-                    onPressed: onExport ??
-                        () {
-                        },
-                    child: Text('EKSPOR', style: TextStyle(
-                    color: Colors.white),)),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  onPressed: _exportPdf,
+                  child: const Text('EKSPOR',
+                      style: TextStyle(color: Colors.white)),
+                ),
               ),
             ],
           )
@@ -678,137 +807,6 @@ class ReportDownload extends StatelessWidget {
       ),
     );
   }
-}
+} 
 
-lib/main.dart
-import 'package:cashy/features/category/domain/usecases/category_usecases.dart';
-import 'package:cashy/features/category/domain/usecases/delete_category.dart';
-import 'package:cashy/features/category/domain/usecases/update_category.dart';
-import 'package:cashy/features/financial_report/data/datasources/report_remote_datasource.dart';
-import 'package:cashy/features/financial_report/data/repositories/report_repository_impl.dart';
-import 'package:cashy/features/financial_report/domain/usecases/report_usecase.dart';
-import 'package:cashy/features/financial_report/presentation/bloc/report_bloc.dart';
-import 'package:cashy/features/pos/data/datasources/pos_remote_datasource.dart';
-import 'package:cashy/features/pos/data/repositories/pos_repository_impl.dart';
-import 'package:cashy/features/pos/domain/usecases/pos_usecase.dart';
-import 'package:cashy/features/pos/presentation/bloc/pos_bloc.dart';
-import 'package:cashy/features/transaction/data/datasources/transaction_remote_datasource.dart';
-import 'package:cashy/features/transaction/data/repositories/transaction_repository_impl.dart';
-import 'package:cashy/features/transaction/domain/usecases/transaction_usecases.dart';
-import 'package:cashy/features/transaction/presentation/bloc/transaction_bloc.dart';
-import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-
-import 'features/auth/presentation/bloc/auth_bloc.dart';
-import 'features/auth/data/datasources/auth_remote_datasource.dart';
-import 'features/auth/data/repositories/auth_repository_impl.dart';
-import 'features/auth/domain/usecases/auth_usecase.dart';
-import 'features/auth/presentation/screens/login_page.dart';
-
-import 'features/category/data/datasources/category_remote_datasource.dart';
-import 'features/category/data/repositories/category_repository_impl.dart';
-import 'features/category/domain/usecases/add_category.dart';
-import 'features/category/presentation/bloc/category_bloc.dart';
-
-import 'features/home/data/datasources/home_remote_datasource.dart';
-import 'features/home/data/repositories/home_repository_impl.dart';
-import 'features/home/domain/usecases/get_transaction.dart';
-import 'features/home/domain/usecases/get_budget_summary.dart';
-import 'features/home/presentation/bloc/home_bloc.dart';
-
-Future<void> main() async {
-  await Supabase.initialize(
-    url: 'https://cfhslshehhrvotayalpb.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmaHNsc2hlaGhydm90YXlhbHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA1Mzk0MTUsImV4cCI6MjA1NjExNTQxNX0.Ddz5JDiRJ6VJc05OKHtR4twBMWR27A28uolM_SoS8-8',
-  );
-  runApp(MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final supabaseClient = Supabase.instance.client;
-
-    // Transaction feature
-    final transactionRemoteDataSource =
-        TransactionRemoteDataSourceImpl(supabaseClient);
-    final transactionRepository =
-        TransactionRepositoryImpl(transactionRemoteDataSource);
-    final addTransactionUseCase = AddTransaction(transactionRepository);
-
-    // Category feature
-    final categoryRemoteDataSource =
-        CategoryRemoteDataSourceImpl(supabaseClient);
-    final categoryRepository = CategoryRepositoryImpl(categoryRemoteDataSource);
-
-    // Home feature
-    final homeRemoteDataSource = HomeRemoteDataSourceImpl(supabaseClient);
-    final homeRepository = HomeRepositoryImpl(homeRemoteDataSource);
-    final getTransactionsByDate = GetTransactionsByDate(homeRepository);
-    final getBudgetSummary = GetBudgetSummary(homeRepository);
-
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider<LoginBloc>(
-          create: (context) => LoginBloc(
-            loginUseCase: LoginUseCase(
-              AuthRepositoryImpl(
-                AuthRemoteDataSourceImpl(supabaseClient),
-              ),
-            ),
-            remoteDataSource: AuthRemoteDataSourceImpl(supabaseClient),
-          ),
-        ),
-        BlocProvider<CategoryBloc>(
-          create: (context) => CategoryBloc(
-            getCategories: GetCategories(categoryRepository),
-            addCategory: AddCategory(categoryRepository),
-            deleteCategory: DeleteCategory(categoryRepository),
-            updateCategory: UpdateCategory(categoryRepository),
-          ),
-        ),
-        BlocProvider<TransactionBloc>(
-          create: (context) =>
-              TransactionBloc(addTransactionUseCase: addTransactionUseCase),
-        ),
-        BlocProvider<HomeBloc>(
-          create: (context) => HomeBloc(
-            getTransactionsByDate: getTransactionsByDate,
-            getBudgetSummary: getBudgetSummary,
-          ),
-        ),
-        BlocProvider<PosBloc>(
-          create: (context) => PosBloc(
-            getPosSummary: GetPosSummary(
-              PosRepositoryImpl(
-                PosRemoteDataSourceImpl(Supabase.instance.client),
-              ),
-            ),
-          ),
-        ),
-        BlocProvider<ReportBloc>(
-          create: (context) => ReportBloc(
-            ReportUseCase(
-              ReportRepositoryImpl(
-                ReportRemoteDatasource(Supabase.instance.client),
-              ),
-            ),
-          ),
-        ),
-      ],
-      child: MaterialApp(
-        home: LoginPage(),
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          scaffoldBackgroundColor: Colors.white,
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue.shade400),
-        ),
-        debugShowCheckedModeBanner: false,
-      ),
-    );
-  }
-}
+simpan dulu!

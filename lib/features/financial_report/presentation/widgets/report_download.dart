@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cashy/features/financial_report/data/datasources/report_remote_datasource.dart';
+import 'package:pdf/pdf.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -22,6 +23,17 @@ class _ReportDownloadState extends State<ReportDownload> {
   final Map<String, String> transactionTypeMap = {
     'Pemasukan': 'income',
     'Pengeluaran': 'expense',
+  };
+
+  final Map<String, String> typeTranslation = {
+    'income': 'Pemasukan',
+    'expense': 'Pengeluaran',
+  };
+
+  final Map<String, String> sourceTranslation = {
+    'wants': 'Keinginan',
+    'needs': 'Kebutuhan',
+    'savings': 'Tabungan',
   };
 
   @override
@@ -92,38 +104,108 @@ class _ReportDownloadState extends State<ReportDownload> {
 
     pdf.addPage(
       pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape.applyMargin(
+          left: 2.54 * PdfPageFormat.cm,
+          top: 2.54 * PdfPageFormat.cm,
+          right: 2.54 * PdfPageFormat.cm,
+          bottom: 2.54 * PdfPageFormat.cm,
+        ),
         build: (context) => [
-          pw.Text(title,
-              style:
-                  pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.Center(
+            child: pw.Text(
+              title,
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
           pw.SizedBox(height: 8),
-          pw.Text('Tipe Transaksi: ${selectedType ?? '-'}'),
+          pw.Center(
+            child: pw.Text('${selectedType ?? '-'}'),
+          ),
           pw.SizedBox(height: 20),
           pw.Text('Nama: ${user.userMetadata?["display_name"] ?? '-'}'),
           pw.Text('Email: ${user.email ?? '-'}'),
           pw.SizedBox(height: 20),
-          pw.TableHelper.fromTextArray(
-            headers: [
-              'Tanggal',
-              'Waktu',
-              'Nominal',
-              'Tipe',
-              'Kategori',
-              'Keterangan',
-              'Tipe Pengeluaran'
+          pw.Table(
+            columnWidths: {
+              0: pw.FixedColumnWidth(2.69 * PdfPageFormat.cm),
+              1: pw.FixedColumnWidth(1.63 * PdfPageFormat.cm),
+              2: pw.FixedColumnWidth(3.71 * PdfPageFormat.cm),
+              3: pw.FixedColumnWidth(2.74 * PdfPageFormat.cm),
+              4: pw.FixedColumnWidth(3.55 * PdfPageFormat.cm),
+              5: pw.FixedColumnWidth(7.70 * PdfPageFormat.cm),
+              6: pw.FixedColumnWidth(2.67 * PdfPageFormat.cm),
+            },
+            border: pw.TableBorder.all(),
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFF87CEFA),
+                ),
+                children: [
+                  for (final header in [
+                    'Tanggal',
+                    'Waktu',
+                    'Nominal',
+                    'Tipe',
+                    'Kategori',
+                    'Keterangan',
+                    'Sumber Anggaran'
+                  ])
+                    pw.Container(
+                      alignment: pw.Alignment.center,
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(
+                        header,
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              ...data.map((item) {
+                final date = item['date'] ?? '-';
+                final time = DateFormat.Hm().format(
+                    DateTime.parse(item['created_at'] ?? item['date']));
+                final amount = item['amount'].toString();
+
+                final typeRaw = item['type'] ?? '-';
+                final type = typeTranslation[typeRaw] ?? typeRaw;
+
+                final category = item['category'] ?? '-';
+                final note = item['note'] ?? '-';
+
+                final sourceRaw = item['source'] ?? '-';
+                final source = sourceTranslation[sourceRaw] ?? sourceRaw;
+
+                return pw.TableRow(children: [
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(date)),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(time)),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text('Rp $amount')),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(type)),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(category)),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(note)),
+                  pw.Padding(
+                      padding: const pw.EdgeInsets.all(4),
+                      child: pw.Text(source)),
+                ]);
+              }),
             ],
-            data: data.map((item) {
-              final date = item['date'] ?? '-';
-              final time =
-                  DateFormat.Hm().format(DateTime.parse(item['created_at']));
-              final amount = item['amount'].toString();
-              final type = item['type'] ?? '-';
-              final category = item['category'] ?? '-';
-              final note = item['note'] ?? '-';
-              final source = item['source'] ?? '-';
-              return [date, time, 'Rp $amount', type, category, note, source];
-            }).toList(),
-          )
+          ),
         ],
       ),
     );
@@ -209,3 +291,4 @@ class _ReportDownloadState extends State<ReportDownload> {
     );
   }
 }
+

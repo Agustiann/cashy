@@ -5,11 +5,11 @@ class ReportRemoteDatasource {
   final SupabaseClient supabaseClient;
 
   ReportRemoteDatasource(this.supabaseClient);
+
   Future<List<String>> getTransactionTypes() async {
     final response = await supabaseClient
         .rpc('get_enum_values', params: {'enum_type': 'transaction_type'});
 
-    // Response berupa List<dynamic> langsung, tanpa perlu akses .data
     final List<dynamic> data = response;
 
     if (data.isEmpty) {
@@ -34,13 +34,16 @@ class ReportRemoteDatasource {
   Future<List<ReportModel>> getMonthlyReport(String month, String year) async {
     final intMonth = int.parse(month);
     final intYear = int.parse(year);
-
     final startDate = DateTime(intYear, intMonth, 1);
     final endDate = DateTime(intYear, intMonth + 1, 1);
+
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return [];
 
     final response = await supabaseClient
         .from('transactions')
         .select('amount, type, category, date')
+        .eq('user_id', userId) // Filter sesuai user login
         .gte('date', startDate.toIso8601String())
         .lt('date', endDate.toIso8601String())
         .order('date', ascending: true)
@@ -59,13 +62,16 @@ class ReportRemoteDatasource {
 
   Future<List<ReportModel>> getYearlyReport(String year) async {
     final intYear = int.parse(year);
-
     final startDate = DateTime(intYear, 1, 1);
     final endDate = DateTime(intYear + 1, 1, 1);
+
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return [];
 
     final response = await supabaseClient
         .from('transactions')
         .select('amount, type, category, date')
+        .eq('user_id', userId) // Filter sesuai user login
         .gte('date', startDate.toIso8601String())
         .lt('date', endDate.toIso8601String())
         .order('date', ascending: true)
@@ -87,9 +93,13 @@ class ReportRemoteDatasource {
     final startDate = DateTime(now.year, 1, 1);
     final endDate = DateTime(now.year, now.month + 1, 1);
 
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return [];
+
     final response = await supabaseClient
         .from('transactions')
         .select('amount, type, category, date')
+        .eq('user_id', userId) // Filter sesuai user login
         .gte('date', startDate.toIso8601String())
         .lt('date', endDate.toIso8601String())
         .order('date', ascending: true)

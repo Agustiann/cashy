@@ -53,17 +53,17 @@ class LoginPage extends StatelessWidget {
                         ).createShader(
                             Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
                         child: Text(
-                          "Welcome",
+                          "Selamat",
                           style: GoogleFonts.montserrat(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
                             color: Colors
-                                .white, // warna ini tidak penting, karena ditimpa shader
+                                .white,
                           ),
                         ),
                       ),
                       Text(
-                        "back!",
+                        "datang!",
                         style: GoogleFonts.montserrat(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -76,7 +76,7 @@ class LoginPage extends StatelessWidget {
                     height: 8,
                   ),
                   Text(
-                    "Ready to take control of your finances today?",
+                    "Siap untuk mengendalikan keuanganmu hari ini?",
                     style: GoogleFonts.montserrat(
                         fontSize: 14,
                         fontWeight: FontWeight.normal,
@@ -95,7 +95,7 @@ class LoginPage extends StatelessWidget {
                           color: Colors.grey,
                         ),
                       ),
-                      hintText: "Enter your mail",
+                      hintText: "Masukkan email",
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.normal,
@@ -103,7 +103,7 @@ class LoginPage extends StatelessWidget {
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                           vertical: 12,
-                          horizontal: 20), // jarak antara teks dan border
+                          horizontal: 20),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(50),
                       ),
@@ -122,7 +122,7 @@ class LoginPage extends StatelessWidget {
                           color: Colors.grey,
                         ),
                       ),
-                      hintText: "Enter your password",
+                      hintText: "Masukkan password",
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.normal,
@@ -139,7 +139,7 @@ class LoginPage extends StatelessWidget {
                   BlocBuilder<LoginBloc, LoginState>(
                     builder: (context, state) {
                       return CustomButton(
-                        label: "Login",
+                        label: "Masuk",
                         onPressed: () {
                           context.read<LoginBloc>().add(
                                 LoginButtonPressed(

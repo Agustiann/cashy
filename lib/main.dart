@@ -5,6 +5,7 @@ import 'package:cashy/features/financial_report/data/datasources/report_remote_d
 import 'package:cashy/features/financial_report/data/repositories/report_repository_impl.dart';
 import 'package:cashy/features/financial_report/domain/usecases/report_usecase.dart';
 import 'package:cashy/features/financial_report/presentation/bloc/report_bloc.dart';
+import 'package:cashy/features/home/domain/usecases/get_expense_distribution.dart';
 import 'package:cashy/features/pos/data/datasources/pos_remote_datasource.dart';
 import 'package:cashy/features/pos/data/repositories/pos_repository_impl.dart';
 import 'package:cashy/features/pos/domain/usecases/pos_usecase.dart';
@@ -96,6 +97,7 @@ class MyApp extends StatelessWidget {
           create: (context) => HomeBloc(
             getTransactionsByDate: getTransactionsByDate,
             getBudgetSummary: getBudgetSummary,
+            getExpenseDistribution: GetExpenseDistribution(homeRepository),
           ),
         ),
         BlocProvider<PosBloc>(

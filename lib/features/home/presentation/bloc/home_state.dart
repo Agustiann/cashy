@@ -13,15 +13,17 @@ class HomeLoaded extends HomeState {
   final List<TransactionEntity> transactions;
   final double totalIncome;
   final double totalExpense;
+  final Map<String, double> expenseDistribution;
 
   HomeLoaded({
     required this.transactions,
     required this.totalIncome,
     required this.totalExpense,
+    required this.expenseDistribution,
   });
 
   @override
-  List<Object?> get props => [transactions, totalIncome, totalExpense];
+  List<Object?> get props => [transactions, totalIncome, totalExpense, expenseDistribution];
 }
 
 class HomeError extends HomeState {

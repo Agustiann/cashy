@@ -1,3 +1,4 @@
+import 'package:cashy/features/auth/presentation/widgets/snackbar_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:cashy/features/financial_report/data/datasources/report_remote_datasource.dart';
 import 'package:pdf/pdf.dart';
@@ -74,7 +75,7 @@ class _ReportDownloadState extends State<ReportDownload> {
     }
   }
 
-  Future<void> _exportPdf() async {
+  Future<void> _exportPdf(BuildContext context) async {
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
     final fromDate = fromDateController.text;
@@ -167,8 +168,8 @@ class _ReportDownloadState extends State<ReportDownload> {
               ),
               ...data.map((item) {
                 final date = item['date'] ?? '-';
-                final time = DateFormat.Hm().format(
-                    DateTime.parse(item['created_at'] ?? item['date']));
+                final time = DateFormat.Hm()
+                    .format(DateTime.parse(item['created_at'] ?? item['date']));
                 final amount = item['amount'].toString();
 
                 final typeRaw = item['type'] ?? '-';
@@ -213,6 +214,11 @@ class _ReportDownloadState extends State<ReportDownload> {
     await Printing.layoutPdf(
       onLayout: (format) async => pdf.save(),
     );
+
+    Navigator.pop(context);
+
+    showCustomSnackBar(
+        context, 'Data ${titleController.text} berhasil diekspor');
   }
 
   @override
@@ -224,18 +230,14 @@ class _ReportDownloadState extends State<ReportDownload> {
         children: [
           TextField(
             controller: titleController,
-            decoration: const InputDecoration(
-              labelText: 'Judul',
-            ),
+            decoration: const InputDecoration(labelText: 'Judul'),
           ),
           GestureDetector(
             onTap: () => _selectDate(context, fromDateController),
             child: AbsorbPointer(
               child: TextFormField(
                 controller: fromDateController,
-                decoration: const InputDecoration(
-                  labelText: 'Dari Tanggal',
-                ),
+                decoration: const InputDecoration(labelText: 'Dari Tanggal'),
               ),
             ),
           ),
@@ -244,16 +246,12 @@ class _ReportDownloadState extends State<ReportDownload> {
             child: AbsorbPointer(
               child: TextFormField(
                 controller: toDateController,
-                decoration: const InputDecoration(
-                  labelText: 'Sampai Tanggal',
-                ),
+                decoration: const InputDecoration(labelText: 'Sampai Tanggal'),
               ),
             ),
           ),
           DropdownButtonFormField<String>(
-            decoration: const InputDecoration(
-              labelText: 'Tipe',
-            ),
+            decoration: const InputDecoration(labelText: 'Tipe'),
             value: selectedType,
             items: transactionTypes.map((item) {
               return DropdownMenuItem(
@@ -279,7 +277,7 @@ class _ReportDownloadState extends State<ReportDownload> {
                 child: ElevatedButton(
                   style:
                       ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  onPressed: _exportPdf,
+                  onPressed: () => _exportPdf(context),
                   child: const Text('EKSPOR',
                       style: TextStyle(color: Colors.white)),
                 ),
@@ -291,4 +289,3 @@ class _ReportDownloadState extends State<ReportDownload> {
     );
   }
 }
-

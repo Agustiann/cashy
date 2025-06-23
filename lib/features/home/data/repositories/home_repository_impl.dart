@@ -18,4 +18,10 @@ class HomeRepositoryImpl implements HomeRepository {
       String userId, DateTime date) {
     return remoteDataSource.getBudgetSummaryByDate(userId, date);
   }
+
+  @override
+  Future<Map<String, double>> getExpenseDistributionBySource(
+      String userId, DateTime date) {
+    return remoteDataSource.getExpenseDistributionBySource(userId, date);
+  }
 }

@@ -52,7 +52,7 @@ class RegisterPage extends StatelessWidget {
                           Rect.fromLTWH(0, 0, bounds.width, bounds.height),
                         ),
                         child: Text(
-                          "Join",
+                          "Mari",
                           style: GoogleFonts.montserrat(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
@@ -61,7 +61,7 @@ class RegisterPage extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        "Us!",
+                        "bergabung!",
                         style: GoogleFonts.montserrat(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -72,7 +72,7 @@ class RegisterPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "Create your account and start managing your finances.",
+                    "Buat akun sekarang dan ambil kendali atas keuanganmu.",
                     style: GoogleFonts.montserrat(
                       fontSize: 14,
                       fontWeight: FontWeight.normal,
@@ -91,7 +91,7 @@ class RegisterPage extends StatelessWidget {
                           color: Colors.grey,
                         ),
                       ),
-                      hintText: "Enter your name",
+                      hintText: "Masukkan nama",
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.normal,
@@ -116,7 +116,7 @@ class RegisterPage extends StatelessWidget {
                           color: Colors.grey,
                         ),
                       ),
-                      hintText: "Enter your email",
+                      hintText: "Masukkan email",
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.normal,
@@ -142,7 +142,7 @@ class RegisterPage extends StatelessWidget {
                           color: Colors.grey,
                         ),
                       ),
-                      hintText: "Enter your password",
+                      hintText: "Masukkan password",
                       hintStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.normal,
@@ -159,7 +159,7 @@ class RegisterPage extends StatelessWidget {
                   BlocBuilder<LoginBloc, LoginState>(
                     builder: (context, state) {
                       return CustomButton(
-                        label: "Register",
+                        label: "Daftar",
                         onPressed: () {
                           context.read<LoginBloc>().add(
                                 RegisterButtonPressed(
@@ -191,7 +191,7 @@ class RegisterPage extends StatelessWidget {
                             Navigator.pop(context);
                           },
                           child: const Text(
-                            "Login di sini",
+                            "Masuk di sini",
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.normal,

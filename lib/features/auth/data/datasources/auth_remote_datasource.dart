@@ -10,6 +10,24 @@ abstract class AuthRemoteDataSource {
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
+  String translateError(String error) {
+    final lowerError = error.toLowerCase();
+
+    if (lowerError.contains('invalid login credentials')) {
+      return 'Email atau kata sandi salah.';
+    }  else if (lowerError.contains('user already registered')) {
+      return 'Email sudah terdaftar.';
+    } else if (lowerError.contains('email not confirmed')) {
+      return 'Email belum dikonfirmasi.';
+    } else if (lowerError.contains('missing email or phone')) {
+      return 'Email dan kata sandi harus diisi.';
+    } else if (lowerError.contains('anonymous sign-ins are disabled')) {
+      return 'Isi semua data.';
+    } else {
+      return error;
+    }
+  }
+
   final SupabaseClient client;
 
   AuthRemoteDataSourceImpl(this.client);
@@ -32,10 +50,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
               : null,
         );
       } else {
-        throw 'Login failed';
+        throw 'Gagal masuk';
       }
     } on AuthApiException catch (e) {
-      throw 'Login failed: ${e.message}';
+      throw translateError(e.message);
     }
   }
 
@@ -78,10 +96,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
               : null,
         );
       } else {
-        throw 'Registration failed';
+        throw 'Gagal daftar';
       }
     } on AuthApiException catch (e) {
-      throw 'Registration failed: ${e.message}';
+      throw translateError(e.message);
     }
   }
 
@@ -99,7 +117,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     try {
       await client.auth.signOut();
     } on AuthApiException catch (e) {
-      throw 'Logout failed: ${e.message}';
+      throw translateError(e.message);
     }
   }
 }
